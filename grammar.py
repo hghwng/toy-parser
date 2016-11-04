@@ -13,6 +13,22 @@ class Grammar:
         production = Production(nterm, syms)
         self.prods[nterm].append(production)
 
+    def is_nonterminal(self, symbol: str) -> bool:
+        return symbol in self.prods
+
+    def is_terminal(self, symbol: str) -> bool:
+        return symbol in self.terms
+
+    def get_alt_nonterminal(self, nonterm: str) -> str:
+        nonterm += "'"
+        while nonterm in self.prods:
+            nonterm += "'"
+        return nonterm
+
+    def duplicate(self):
+        from copy import deepcopy
+        return deepcopy(self)
+
     def __str__(self):
         result = "Grammar:\n"
         result += "  Start: " + self.start
