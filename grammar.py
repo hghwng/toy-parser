@@ -28,7 +28,15 @@ class Grammar:
 class Production:
     def __init__(self, nterm: str, syms: list):
         self.nterm = nterm
-        self.syms = syms
+        self.syms = Production.remove_eps(syms)
+
+    def remove_eps(syms: list) -> list:
+        for sym in syms:
+            if sym != '@':
+                break
+        else:
+            return ['@']
+        return list(filter(lambda x: x != '@', syms))
 
     def __repr__(self):
         return "Production({}, {})".format(self.nterm, self.syms)
