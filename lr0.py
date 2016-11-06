@@ -41,10 +41,8 @@ class LR0Constructor:
         self.grammar = LR0Constructor._construct_argumented_grammar(grammar)
         self.closures = list()      # closures[state] = set(item)
         self.kernels = list()       # kernels[state] = set(kernel_item)
-
-        goto = self._construct_goto_and_kernels_and_closures()
-        # transitions[src_state][sym] = dst_state
-        self.transitions = self._construct_transitions(goto)
+        self.transitions = list()   # transitions[src_state][sym] = dst_state
+        self._construct_all()
 
     def __str__(self):
         result = 'LR(0):'
@@ -118,25 +116,20 @@ class LR0Constructor:
                     new_items.add(new_item)
         return result
 
-    def _construct_goto_and_kernels_and_closures(self):
+    def _construct_all(self):
         start_prod = self.grammar.prods[self.grammar.start][0]
-        new_items = {frozenset({LR0Item(start_prod)})}
-        old_items = set()
+        self.kernels.append(frozenset({LR0Item(start_prod)}))
 
-        #      goto[src_state_idx][sym] = set(dst_kernel_item)
-        # self.goto[src_state_idx][sym] = dst_state_idx
-        goto = list()
-        while new_items:
-            src_items = new_items.pop()
-            old_items.add(src_items)
-            self.kernels.append(src_items)
-
+        kernel_idx = 0
+        while kernel_idx < len(self.kernels):
+            src_items = self.kernels[kernel_idx]
             closure_items_set = self._get_closure(src_items)
             self.closures.append(frozenset(closure_items_set))
-
             closure_items = list(closure_items_set)
+
             transitions = dict()
             for i, item in enumerate(closure_items):
+                # Pick the next symbol to process
                 next_syms = item.get_syms_after_dot()
                 if not next_syms:
                     continue
@@ -144,29 +137,23 @@ class LR0Constructor:
                 if next_sym in transitions:
                     continue
 
+                # Get all items whose next symbol is also next_sym
                 dst_items = set()
                 for item in closure_items[i:]:
                     next_syms = item.get_syms_after_dot()
                     if not next_syms or next_syms[0] != next_sym:
                         continue
                     dst_items.add(item.get_advanced_item())
-
                 dst_items = frozenset(dst_items)
-                transitions[next_sym] = dst_items
-                if dst_items not in old_items:
-                    new_items.add(dst_items)
-            goto.append(transitions)
-        return goto
 
-    def _construct_transitions(self, goto):
-        result = [dict() for i in range(len(goto))]
-        lookup = dict([(kernel, i)for i, kernel in enumerate(self.kernels)])
+                # Store the item set if not exist
+                if dst_items not in self.kernels:
+                    self.kernels.append(dst_items)
+                transitions[next_sym] = self.kernels.index(dst_items)
+            self.transitions.append(transitions)
+            kernel_idx += 1
 
-        for src_state, src_transitions in enumerate(goto):
-            result_dict = result[src_state]
-            for sym, dst_kernel in src_transitions.items():
-                result_dict[sym] = lookup[dst_kernel]
-        return result
+
 
 
 def main():
