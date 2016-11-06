@@ -35,6 +35,7 @@ class LR0Item:
         dot_syms.insert(self.pos, '·')
         return "{} → {}".format(self.prod.nterm, " ".join(dot_syms))
 
+
 class LR0Constructor:
     def __init__(self, grammar: Grammar):
         self.grammar = LR0Constructor.construct_argumented_grammar(grammar)
@@ -166,6 +167,7 @@ class LR0Constructor:
             for sym, dst_kernel in src_transitions.items():
                 result_dict[sym] = lookup[dst_kernel]
         return result
+
 
 def main():
     bnf = '''
