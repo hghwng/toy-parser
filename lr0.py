@@ -38,13 +38,13 @@ class LR0Item:
 
 class LR0Constructor:
     def __init__(self, grammar: Grammar):
-        self.grammar = LR0Constructor.construct_argumented_grammar(grammar)
+        self.grammar = LR0Constructor._construct_argumented_grammar(grammar)
         self.closures = list()      # closures[state] = set(item)
         self.kernels = list()       # kernels[state] = set(kernel_item)
 
-        goto = self.construct_goto_and_kernels_and_closures()
+        goto = self._construct_goto_and_kernels_and_closures()
         # transitions[src_state][sym] = dst_state
-        self.transitions = self.construct_transitions(goto)
+        self.transitions = self._construct_transitions(goto)
 
     def __str__(self):
         result = 'LR(0):'
@@ -89,14 +89,14 @@ class LR0Constructor:
 
         export_file.write('}')
 
-    def construct_argumented_grammar(grammar: Grammar) -> Grammar:
+    def _construct_argumented_grammar(grammar: Grammar) -> Grammar:
         START_NTERM = '!S'
         g = grammar.duplicate()
         g.add_production(START_NTERM, (g.start))
         g.start = START_NTERM
         return g
 
-    def get_closure(self, item) -> set:
+    def _get_closure(self, item) -> set:
         new_items = None
         if hasattr(item, '__iter__'):
             new_items = set(item)
@@ -118,7 +118,7 @@ class LR0Constructor:
                     new_items.add(new_item)
         return result
 
-    def construct_goto_and_kernels_and_closures(self):
+    def _construct_goto_and_kernels_and_closures(self):
         start_prod = self.grammar.prods[self.grammar.start][0]
         new_items = {frozenset({LR0Item(start_prod)})}
         old_items = set()
@@ -131,7 +131,7 @@ class LR0Constructor:
             old_items.add(src_items)
             self.kernels.append(src_items)
 
-            closure_items_set = self.get_closure(src_items)
+            closure_items_set = self._get_closure(src_items)
             self.closures.append(frozenset(closure_items_set))
 
             closure_items = list(closure_items_set)
@@ -158,7 +158,7 @@ class LR0Constructor:
             goto.append(transitions)
         return goto
 
-    def construct_transitions(self, goto):
+    def _construct_transitions(self, goto):
         result = [dict() for i in range(len(goto))]
         lookup = dict([(kernel, i)for i, kernel in enumerate(self.kernels)])
 
