@@ -46,6 +46,18 @@ class Production:
         self.nterm = nterm
         self.syms = Production.remove_eps(syms)
 
+    def __eq__(self, other):
+        return self.nterm == other.nterm and self.syms == other.syms
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        result = hash(self.nterm)
+        for sym in self.syms:
+            result ^= hash(sym)
+        return result
+
     def remove_eps(syms: list) -> list:
         for sym in syms:
             if sym != '@':
@@ -58,4 +70,4 @@ class Production:
         return "Production({}, {})".format(self.nterm, self.syms)
 
     def __str__(self):
-        return "{} -> {}".format(self.nterm, " ".join(self.syms))
+        return "{} → {}".format(self.nterm, " ".join(self.syms))
