@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from grammar import Grammar, Production
 
+_START_NTERM = '!S'
 
 class LR0Item:
     def __init__(self, prod: Production=None, pos=0):
@@ -88,10 +89,9 @@ class LR0Constructor:
         export_file.write('}')
 
     def _construct_argumented_grammar(grammar: Grammar) -> Grammar:
-        START_NTERM = '!S'
         g = grammar.duplicate()
-        g.add_production(START_NTERM, (g.start))
-        g.start = START_NTERM
+        g.add_production(_START_NTERM, (g.start))
+        g.start = _START_NTERM
         return g
 
     def _get_closure(self, item) -> set:
