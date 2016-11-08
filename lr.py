@@ -4,6 +4,7 @@ from grammar import Grammar, Production
 import bnf_parser
 import ll1
 
+
 class LR0Item:
     def __init__(self, prod: Production=None, pos=0):
         self.prod = prod
@@ -18,7 +19,7 @@ class LR0Item:
     def __hash__(self):
         return hash(self.prod) ^ hash(self.pos)
 
-    def get_syms_after_dot(self):
+    def get_next_syms(self):
         if self.pos >= len(self.prod.syms):
             return tuple()
         result = tuple(self.prod.syms[self.pos:])
@@ -50,7 +51,7 @@ class LR1Item(LR0Item):
         return LR0Item.__hash__(self) ^ hash(self.lookahead)
 
     def __repr__(self):
-        return "LR1Item({}, {} {})".format(self.prod, self.pos, self.lookahead)
+        return "LR1Item{}".format(str(self))
 
     def __str__(self):
         return "[{}, {}]".format(LR0Item.__str__(self), '/'.join(self.lookahead))
@@ -58,19 +59,49 @@ class LR1Item(LR0Item):
     def get_next_item(self):
         return LR1Item(self.prod, self.pos + 1, self.lookahead)
 
+
+class LREdge:
+    def __init__(self, src_items, dst_state: int):
+        self.src_items = src_items
+        self.dst_state = dst_state
+
+    def __repr__(self):
+        return "LREdge({}, {})".format(set(self.src_items), self.dst_state)
+
+
+class LRState:
+    def __init__(self, kernel, edges=None):
+        self.edges = edges
+        self.kernel = kernel
+
+    def __repr__(self):
+        return "LRState({}, {})".format(set(self.kernel), self.edges)
+
+    def get_closure(self):
+        closure = set()
+        for edge in self.edges.values():
+            closure.update(edge.src_items)
+        return closure
+
+    @staticmethod
+    def find_kernel_index(states, kernel):
+        kernels = [i.kernel for i in states]
+        try:
+            return kernels.index(kernel)
+        except ValueError:
+            return -1
+
+
 class LR0AlgorithmSuit:
     NAME = 'LR0'
+
+    def __init__(self, grammar: Grammar):
+        pass
 
     def build_item(self, prod: Production, parent: LR0Item=None):
         self = self
         parent = parent
         return LR0Item(prod)
-
-    def construct_table(self, transitions: list) -> list:
-        # table[state] = dict(symbol -> action)
-        for src_state, transitions in enumerate(transitions):
-            for sym, dst_state in transitions.items():
-                pass
 
 
 class LR1AlgorithmSuit:
@@ -83,7 +114,7 @@ class LR1AlgorithmSuit:
         if not parent:
             return LR1Item(prod, 0, frozenset({'$'}))
 
-        lookaheads = ll1.get_first_from_syms(self.first, parent.get_syms_after_dot()[1:])
+        lookaheads = ll1.get_first_from_syms(self.first, parent.get_next_syms()[1:])
         if '@' in lookaheads:
             lookaheads.discard('@')
             lookaheads.update(parent.lookahead)
@@ -103,7 +134,7 @@ def get_closure(grammar: Grammar, item, algo_suit) -> set:
         item = new_items.pop()
         result.add(item)
 
-        next_syms = item.get_syms_after_dot()
+        next_syms = item.get_next_syms()
         if not next_syms or \
             not grammar.is_nonterminal(next_syms[0]):
             continue
@@ -122,52 +153,63 @@ def construct_argumented_grammar(grammar: Grammar) -> Grammar:
     return g
 
 
-def categorize_items_by_next_symbol(closures: set) -> dict:
-    # result[sym] = set(item)
-    result = defaultdict(set)
-    for item in closures:
-        next_syms = item.get_syms_after_dot()
+def _construct_state_transition_dict(grammar: Grammar, src_state: LRState, algo_suit):
+    src_closure_items = get_closure(grammar, src_state.kernel, algo_suit)
+
+    src_dict = defaultdict(set)  # edge_src_state[sym] = set(src_items)
+    dst_dict = defaultdict(set)  # edge_dst_state[sym] = set(dst_items)
+    for item in src_closure_items:
+        next_syms = item.get_next_syms()
         if next_syms:
-            result[next_syms[0]].add(item)
+            src_dict[next_syms[0]].add(item)
+            dst_dict[next_syms[0]].add(item.get_next_item())
         else:
-            result[''].add(item)
-    return dict(result)
+            src_dict[''].add(item)
+    return src_dict, dst_dict
 
 
-def construct_kernels_closures_transitions(grammar: Grammar, algo_suit):
-    closures = list()      # closures[state] = set(item)
-    transitions = list()   # transitions[src_state][sym] = dst_state
-    kernels = list()       # kernels[state] = set(kernel_item)
-    kernels.append(frozenset({algo_suit.build_item(grammar.prods[grammar.start][0])}))
-
-    kernel_idx = 0
-    while kernel_idx < len(kernels):
-        src_items_closure = get_closure(grammar, kernels[kernel_idx], algo_suit)
-        closures.append(frozenset(src_items_closure))
-
-        next_items = categorize_items_by_next_symbol(src_items_closure)
-        transition = dict()
-        for next_sym, src_items in next_items.items():
-            if not next_sym:
-                continue
-            next_kernel = frozenset([i.get_next_item() for i in src_items])
-            if next_kernel not in kernels:
-                kernels.append(next_kernel)
-            transition[next_sym] = kernels.index(next_kernel)
-        transitions.append(transition)
-        kernel_idx += 1
-    return kernels, closures, transitions
+def _construct_edge(states: list, src_dict: dict, dst_dict: dict):
+    edges = dict()
+    for sym in dst_dict:
+        src_items = frozenset(src_dict[sym])
+        dst_items = frozenset(dst_dict[sym])
+        dst_index = LRState.find_kernel_index(states, dst_items)
+        if dst_index == -1:
+            dst_index = len(states)
+            states.append(LRState(dst_items))
+        edges[sym] = LREdge(src_items, dst_index)
+    if '' in src_dict:
+        edges[''] = LREdge(frozenset(src_dict['']), -1)
+    return edges
 
 
-def dump_dfa(kernels: list, closures: list, transitions: list, export_file):
+def construct_states(grammar: Grammar, algo_suit_class):
+    grammar = construct_argumented_grammar(grammar)
+    algo_suit = algo_suit_class(grammar)
+    states = list()
+
+    initial_kernel = algo_suit.build_item(grammar.prods[grammar.start][0])
+    states.append(LRState(frozenset({initial_kernel})))
+
+    state_idx = 0
+    while state_idx < len(states):
+        src_state = states[state_idx]
+        src_dict, dst_dict \
+            = _construct_state_transition_dict(grammar, src_state, algo_suit)
+        src_state.edges = _construct_edge(states, src_dict, dst_dict)
+        state_idx += 1
+    return states
+
+
+def dump_dfa(states: list, export_file):
     export_file.write('digraph {\n  rankdir = "LR";')
 
-    for i, kernel in enumerate(kernels):
+    for i, state in enumerate(states):
         export_file.write('  "node{}" [\n'.format(i))
         export_file.write('    shape = "record"\n')
         export_file.write(r'    label = "I{}\n|'.format(i))
-        export_file.write(r'\l'.join([str(t) for t in kernel]))
-        nonkernel = closures[i] - kernel
+        export_file.write(r'\l'.join([str(t) for t in state.kernel]))
+        nonkernel = state.get_closure() - state.kernel
         export_file.write(r'\l')
         if nonkernel:
             export_file.write('|')
@@ -175,22 +217,24 @@ def dump_dfa(kernels: list, closures: list, transitions: list, export_file):
             export_file.write(r'\l')
         export_file.write('"\n  ];\n')
     export_file.write('\n\n')
-    for src_state, transitions in enumerate(transitions):
-        for sym, dst_state in transitions.items():
+    for src_state, state in enumerate(states):
+        for sym, edge in state.edges.items():
+            if sym == '':
+                continue
             line = '  "node{}" -> "node{}" [label="{}"]\n'.format(
-                src_state, dst_state, sym)
+                src_state, edge.dst_state, sym)
             export_file.write(line)
 
     export_file.write('}')
 
 
-def str_kernels(kernels: list, closures: list) -> str:
+def str_states(states: list) -> str:
     result = '  States:'
-    for i, kernel in enumerate(kernels):
+    for i, state in enumerate(states):
         result += '\n    {}:'.format(i)
-        for item in kernel:
+        for item in state.kernel:
             result += '\n      {}'.format(item)
-        nonkernel = closures[i] - kernel
+        nonkernel = state.get_closure() - state.kernel
         if nonkernel:
             result += '\n      (Nonkernel)'
             for item in nonkernel:
@@ -198,31 +242,27 @@ def str_kernels(kernels: list, closures: list) -> str:
     return result
 
 
-def str_transitions(transitions: list) -> str:
+def str_transitions(states: list) -> str:
     result = '  Transitions:'
-    for src_state, transitions in enumerate(transitions):
-        for sym, dst_state in transitions.items():
-            result += '\n    {} {} {}'.format(src_state, sym, dst_state)
+    for src_state, state in enumerate(states):
+        for sym, edge in state.edges.items():
+            if sym == '':
+                continue
+            result += '\n    {} {} {}'.format(src_state, sym, edge.dst_state)
     return result
 
 
 def str_lr(grammar: Grammar, algo_suit_class):
-    argumented_grammar = construct_argumented_grammar(grammar)
-    algo_suit = algo_suit_class(argumented_grammar)
-    kernels, closures, transitions \
-        = construct_kernels_closures_transitions(argumented_grammar, algo_suit)
-    result = algo_suit.NAME + ':'
-    result += '\n' + str_kernels(kernels, closures)
-    result += '\n' + str_transitions(transitions)
+    states = construct_states(grammar, algo_suit_class)
+    result = algo_suit_class.NAME + ':'
+    result += '\n' + str_states(states)
+    result += '\n' + str_transitions(states)
     return result
 
 
 def dump_lr(grammar: Grammar, algo_suit_class, export_file):
-    argumented_grammar = construct_argumented_grammar(grammar)
-    algo_suit = algo_suit_class(argumented_grammar)
-    kernels, closures, transitions \
-        = construct_kernels_closures_transitions(argumented_grammar, algo_suit)
-    dump_dfa(kernels, closures, transitions, export_file)
+    states = construct_states(grammar, algo_suit_class)
+    dump_dfa(states, export_file)
 
 
 def main():
@@ -232,6 +272,7 @@ def main():
     '''
     grammar = bnf_parser.parse(bnf)
     print(str_lr(grammar, LR1AlgorithmSuit))
+    dump_lr(grammar, LR1AlgorithmSuit, open('dump.dot', 'w'))
 
 
 if __name__ == '__main__':
