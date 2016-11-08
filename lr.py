@@ -418,24 +418,17 @@ def dump_lr(grammar: Grammar, algo_suit_class, export_file):
     dump_dfa(states, export_file)
 
 
-def demo_parse(grammar: Grammar, algo_suit_class, input_syms: list):
-    grammar = construct_argumented_grammar(grammar)
-    algo_suit = algo_suit_class(grammar)
-    states = construct_states(grammar, algo_suit)
-    table = construct_table(grammar, states, algo_suit)
-    print(str_states(states))
-    print(str_table(table))
-
+def _demo_parse_cptt(table: list, input_syms: list):
     stack_str = list()
     symbol_str = list()
     input_str = list()
     action_str = list()
-    def callback_dragonbook(action, states, syms, pos):
+    def callback(action, states, syms, pos):
         stack_str.append(' '.join([str(i) for i in states]))
         symbol_str.append(' '.join(syms))
         input_str.append(' '.join(input_syms[pos:]))
         action_str.append(str(action))
-    parse(table, input_syms, callback_dragonbook)
+    parse(table, input_syms, callback)
 
     get_length = lambda arr: max([len(t) for t in arr])
     stack_length = get_length(stack_str)
@@ -448,6 +441,42 @@ def demo_parse(grammar: Grammar, algo_suit_class, input_syms: list):
             input_val.rjust(input_length),
             action_str[i]))
 
+def _demo_parse_old(table: list, input_syms: list):
+    overview_str = list()
+    input_str = list()
+    action_str = list()
+    def callback(action, states, syms, pos):
+        overview = str(states[0])
+        for i, sym in enumerate(syms[1:]):
+            overview += ' ' + str(sym) + ' ' + str(states[i + 1])
+        input_str.append(' '.join(input_syms[pos:]))
+        overview_str.append(overview)
+        action_str.append(action)
+    parse(table, input_syms, callback)
+
+    get_length = lambda arr: max([len(t) for t in arr])
+    overview_length = get_length(overview_str)
+    input_length = get_length(input_str)
+    for i, input_val in enumerate(input_str):
+        print('{} | {} | {}'.format(
+            overview_str[i].ljust(overview_length),
+            input_val.rjust(input_length),
+            action_str[i]))
+
+
+def demo_parse(grammar: Grammar, algo_suit_class, input_syms: list,
+               old_style=True):
+    grammar = construct_argumented_grammar(grammar)
+    algo_suit = algo_suit_class(grammar)
+    states = construct_states(grammar, algo_suit)
+    table = construct_table(grammar, states, algo_suit)
+    print(str_states(states))
+    print(str_table(table))
+    if old_style:
+        _demo_parse_old(table, input_syms)
+    else:
+        _demo_parse_cptt(table, input_syms)
+
 
 def main():
     bnf = '''
@@ -457,7 +486,7 @@ def main():
     '''
     grammar = bnf_parser.parse(bnf)
     # print(str_lr(grammar, SLR1AlgorithmSuit))
-    demo_parse(grammar, LR1AlgorithmSuit, 'id * id + id'.split())
+    demo_parse(grammar, SLR1AlgorithmSuit, 'id * id + id'.split())
 
 
 if __name__ == '__main__':
