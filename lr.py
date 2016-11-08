@@ -287,15 +287,18 @@ def construct_table(grammar: Grammar, states: list, algo_suit):
                 # Terminal, shift
                 actions[sym].add(LRAction.new_shift(edge.dst_state))
             else:
-                if final_item == tuple(edge.src_items)[0]:
-                    # Nonterminal, accept
-                    actions[sym].add(LRAction.new_accept())
-                else:
-                    # Nonterminal, goto
-                    actions[sym].add(LRAction.new_goto(edge.dst_state))
+                # Nonterminal, goto
+                actions[sym].add(LRAction.new_goto(edge.dst_state))
         if '' in state.edges:
-            # Reduce
-            algo_suit.build_reduce(actions, state.edges[''])
+            edge = state.edges['']
+            current_item = tuple(edge.src_items)[0]
+            if final_item.prod == current_item.prod and \
+               final_item.pos == current_item.pos:
+                # Accept
+                actions['$'].add(LRAction.new_accept())
+            else:
+                # Reduce
+                algo_suit.build_reduce(actions, edge)
     return table
 
 
