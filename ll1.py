@@ -8,151 +8,165 @@ def _update_set(dst: set, to_add: set) -> bool:
     return old_len != len(dst)
 
 
-class LL1Constructor:
-    def __init__(self, grammar: Grammar):
-        self.grammar = grammar
-        self.first = dict([(sym, set()) for sym in grammar.prods])
-        self.first['@'] = {'@'}
-        self._construct_first()
-
-        self.follow = dict([(sym, set()) for sym in grammar.prods])
-        self._construct_follow()
-
-        # self.table[nterm][term] = Production
-        self.table = dict([(sym, list()) for sym in grammar.prods])
-        self._construct_table()
-
-    def __str__(self):
-        result = 'LL(1):'
-        max_len = max([len(x) for x in self.grammar.prods])
-
-        conflicts = self.get_conflict_entries()
-        if conflicts:
-            result += ' (NOT an LL(1) grammar)'
-
-        result += '\n  FIRST:'
-        for sym in self.grammar.prods:
-            result += '\n    {}: {}'.format(
-                sym.ljust(max_len), ' '.join(self.first[sym]))
-
-        result += '\n  FOLLOW:'
-        for sym in self.grammar.prods:
-            result += '\n    {}: {}'.format(
-                sym.ljust(max_len), ' '.join(self.follow[sym]))
-
-        result += '\n  Table:'
-        for nterm, pairs in self.table.items():
-            result += '\n    {}:'.format(nterm)
-            for term, prod in sorted(pairs, key=lambda x: x[0]):
-                result += '\n      {}: {}'.format(term, prod)
-
-        if conflicts:
-            result += '\n  Conflicts:'
-            for nterm, term, prods in conflicts:
-                result += '\n    {}, {}:'.format(nterm, term)
-                for prod in prods:
-                    result += '\n      ' + str(prod)
-
-        return result
-
-    def _construct_first(self):
-        # FIRST(a) = {a}
-        for term in self.grammar.terms:
-            self.first[term] = {term}
-
-        changed = True
-        while changed:
-            changed = False
-            for nterm in self.grammar.prods:
-                if self._construct_first_nterm(nterm):
-                    changed = True
-
-    def _construct_first_nterm(self, nterm: str) -> bool:
+def construct_first(grammar: Grammar) -> list:
+    def construct_first_nterm(nterm: str) -> bool:
         changed = False
-        for prod in self.grammar.prods[nterm]:
+        for prod in grammar.prods[nterm]:
             for sym in prod.syms:
-                if sym != '@' and tuple(self.first[sym]) != ('@',):
-                    if _update_set(self.first[nterm], self.first[sym]):
+                if sym != '@' and tuple(first[sym]) != ('@',):
+                    if _update_set(first[nterm], first[sym]):
                         changed = True
                     break
             else:
-                if _update_set(self.first[nterm], {'@'}):
-                    self.first[nterm].add('@')
+                if _update_set(first[nterm], {'@'}):
+                    first[nterm].add('@')
                     changed = True
         return changed
 
-    def _construct_follow(self):
-        self.follow[self.grammar.start] = {'$'}
-        changed = True
-        while changed:
-            changed = False
-            for prodlist in self.grammar.prods.values():
-                for prod in prodlist:
-                    if self._construct_follow_nterm(prod):
-                        changed = True
+    first = dict([(sym, set()) for sym in grammar.prods])
+    first['@'] = {'@'}
+    # FIRST(a) = {a}
+    for term in grammar.terms:
+        first[term] = {term}
 
-    def _construct_follow_nterm(self, prod: Production) -> bool:
+    changed = True
+    while changed:
+        changed = False
+        for nterm in grammar.prods:
+            if construct_first_nterm(nterm):
+                changed = True
+    return first
+
+
+# returns {'@'} on empty syms
+def get_first_from_syms(first: list, syms: list) -> set:
+    # First, assume that eps is already in FIRST
+    result = {'@'}
+    for sym in syms:
+        result.update(first[sym])
+        if '@' not in first[sym]:
+            # If the eps transition link stops here, remove eps
+            return result - {'@'}
+    # Eps transition link doesn't stop till end, keep it
+    return result
+
+
+def construct_follow(grammar: Grammar, first: list) -> list:
+    def construct_follow_nterm(prod: Production) -> bool:
         changed = False
         i = 0
         while i < len(prod.syms):
             nterm = prod.syms[i]
             # Only process nonterminals
-            if not self.grammar.is_nonterminal(nterm):
+            if not grammar.is_nonterminal(nterm):
                 i += 1
                 continue
             i += 1
 
             remaining_syms = prod.syms[i:]
-            remaining_first = self.get_first_from_syms(remaining_syms)
-            if _update_set(self.follow[nterm], remaining_first - {'@'}):
+            remaining_first = get_first_from_syms(first, remaining_syms)
+            if _update_set(follow[nterm], remaining_first - {'@'}):
                 changed = True
             if '@' in remaining_first:
-                if _update_set(self.follow[nterm], self.follow[prod.nterm]):
+                if _update_set(follow[nterm], follow[prod.nterm]):
                     changed = True
         return changed
 
-    def _construct_table(self):
-        for nterm, prodlist in self.grammar.prods.items():
+    follow = dict([(sym, set()) for sym in grammar.prods])
+    follow[grammar.start] = {'$'}
+    changed = True
+    while changed:
+        changed = False
+        for prodlist in grammar.prods.values():
             for prod in prodlist:
-                first = self.get_first_from_syms(prod.syms)
-                for term in first:
-                    if term == '@':
-                        for term in self.follow[nterm]:
-                            if term != '@':
-                                self.table[nterm].append((term, prod))
-                    else:
-                        self.table[nterm].append((term, prod))
+                if construct_follow_nterm(prod):
+                    changed = True
+    return follow
 
-    # returns {'@'} on empty syms
-    def get_first_from_syms(self, syms: list) -> set:
-        # First, assume that eps is already in FIRST
-        result = {'@'}
-        for sym in syms:
-            result.update(self.first[sym])
-            if '@' not in self.first[sym]:
-                # If the eps transition link stops here, remove eps
-                return result - {'@'}
-        # Eps transition link doesn't stop till end, keep it
-        return result
 
+def construct_table(grammar: Grammar, first: list, follow: list) -> dict:
+    # table[nterm][term] = Production
+    table = dict([(sym, list()) for sym in grammar.prods])
+    for nterm, prodlist in grammar.prods.items():
+        for prod in prodlist:
+            first_set = get_first_from_syms(first, prod.syms)
+            for term in first_set:
+                if term == '@':
+                    for term in follow[nterm]:
+                        if term != '@':
+                            table[nterm].append((term, prod))
+                else:
+                    table[nterm].append((term, prod))
+    return table
+
+
+def construct_conflicts(table: dict) -> list:
     # result[index] = tuple(nonterm, term, list(Productions))
-    def get_conflict_entries(self) -> list:
-        result = list()
-        for nterm, pairs in self.table.items():
-            terms = set([pair[0] for pair in pairs])
-            for term in terms:
-                prods = list(filter(lambda pair: pair[0] == term, pairs))
-                if len(prods) != 1:
-                    result.append((nterm, term, [pair[1] for pair in prods]))
-        return result
+    result = list()
+    for nterm, pairs in table.items():
+        terms = set([pair[0] for pair in pairs])
+        for term in terms:
+            prods = list(filter(lambda pair, term=term: pair[0] == term, pairs))
+            if len(prods) != 1:
+                result.append((nterm, term, [pair[1] for pair in prods]))
+    return result
+
+
+def _str_first_or_follow(grammar: Grammar, first: list, title) -> str:
+    result = '  ' + title
+    for sym in grammar.prods:
+        result += '\n    {}: {}'.format(sym, ' '.join(first[sym]))
+    return result
+
+
+def str_follow(grammar: Grammar, follow: list) -> str:
+    return _str_first_or_follow(grammar, follow, 'FOLLOW')
+
+
+def str_first(grammar: Grammar, first: list) -> str:
+    return _str_first_or_follow(grammar, first, 'FIRST')
+
+
+def str_table(table: dict) -> str:
+    result = '  Table:'
+    for nterm, pairs in table.items():
+        result += '\n    {}:'.format(nterm)
+        for term, prod in sorted(pairs, key=lambda x: x[0]):
+            result += '\n      {}: {}'.format(term, prod)
+    return result
+
+
+def str_conflicts(conflicts: list) -> str:
+    result = ''
+    for nterm, term, prods in conflicts:
+        result += '\n    {}, {}:'.format(nterm, term)
+        for prod in prods:
+            result += '\n      ' + str(prod)
+    if result:
+        return '  Conflicts:' + result
+    else:
+        return '  Conflicts: None'
+
+
+def str_ll1(grammar: Grammar) -> str:
+    first = construct_first(grammar)
+    follow = construct_follow(grammar, first)
+    table = construct_table(grammar, first, follow)
+    conflicts = construct_conflicts(table)
+
+    result = 'LL(1):'
+    result += '\n' + str_first(grammar, first)
+    result += '\n' + str_follow(grammar, follow)
+    result += '\n' + str_table(table)
+    result += '\n' + str_conflicts(conflicts)
+    return result
 
 
 def _demo_construction(bnf):
     from bnf_parser import parse
     grammar = parse(bnf)
     print(grammar)
-    constructor = LL1Constructor(grammar)
-    print(constructor)
+    print(str_ll1(grammar))
 
 
 def main():
