@@ -1,8 +1,7 @@
 #!/usr/bin/env python
+from collections import defaultdict
 from grammar import Grammar, Production
 import bnf_parser
-
-_START_NTERM = '!S'
 
 class LR0Item:
     def __init__(self, prod: Production=None, pos=0):
@@ -26,7 +25,7 @@ class LR0Item:
             return tuple()
         return result
 
-    def get_advanced_item(self, n=1):
+    def get_next_item(self, n=1):
         return LR0Item(self.prod, self.pos + n)
 
     def __repr__(self):
@@ -62,10 +61,23 @@ def get_closure(grammar: Grammar, item) -> set:
 
 
 def construct_argumented_grammar(grammar: Grammar) -> Grammar:
+    START_NTERM = '!S'
     g = grammar.duplicate()
-    g.add_production(_START_NTERM, (g.start,))
-    g.start = _START_NTERM
+    g.add_production(START_NTERM, (g.start,))
+    g.start = START_NTERM
     return g
+
+
+def categorize_items_by_next_symbol(closures: set) -> dict:
+    # result[sym] = set(item)
+    result = defaultdict(set)
+    for item in closures:
+        next_syms = item.get_syms_after_dot()
+        if next_syms:
+            result[next_syms[0]].add(item)
+        else:
+            result[''].add(item)
+    return dict(result)
 
 
 def construct_kernels_closures_transitions(grammar: Grammar):
@@ -76,34 +88,18 @@ def construct_kernels_closures_transitions(grammar: Grammar):
 
     kernel_idx = 0
     while kernel_idx < len(kernels):
-        src_items = kernels[kernel_idx]
-        closure_items_set = get_closure(grammar, src_items)
-        closures.append(frozenset(closure_items_set))
-        closure_items = list(closure_items_set)
+        src_items_closure = get_closure(grammar, kernels[kernel_idx])
+        closures.append(frozenset(src_items_closure))
 
+        next_items = categorize_items_by_next_symbol(src_items_closure)
         transition = dict()
-        for i, item in enumerate(closure_items):
-            # Pick the next symbol to process
-            next_syms = item.get_syms_after_dot()
-            if not next_syms:
+        for next_sym, src_items in next_items.items():
+            if not next_sym:
                 continue
-            next_sym = next_syms[0]
-            if next_sym in transitions:
-                continue
-
-            # Get all items whose next symbol is also next_sym
-            dst_items = set()
-            for item in closure_items[i:]:
-                next_syms = item.get_syms_after_dot()
-                if not next_syms or next_syms[0] != next_sym:
-                    continue
-                dst_items.add(item.get_advanced_item())
-            dst_items_frozen = frozenset(dst_items)
-
-            # Store the item set if not exist
-            if dst_items not in kernels:
-                kernels.append(dst_items_frozen)
-            transition[next_sym] = kernels.index(dst_items_frozen)
+            next_kernel = frozenset([i.get_next_item() for i in src_items])
+            if next_kernel not in kernels:
+                kernels.append(next_kernel)
+            transition[next_sym] = kernels.index(next_kernel)
         transitions.append(transition)
         kernel_idx += 1
     return kernels, closures, transitions
