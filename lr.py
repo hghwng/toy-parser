@@ -2,6 +2,7 @@
 from collections import defaultdict
 from grammar import Grammar, Production
 import bnf_parser
+import ll1
 
 class LR0Item:
     def __init__(self, prod: Production=None, pos=0):
@@ -25,8 +26,8 @@ class LR0Item:
             return tuple()
         return result
 
-    def get_next_item(self, n=1):
-        return LR0Item(self.prod, self.pos + n)
+    def get_next_item(self):
+        return LR0Item(self.prod, self.pos + 1)
 
     def __repr__(self):
         return "LR0Item({}, {})".format(self.prod, self.pos)
@@ -37,7 +38,27 @@ class LR0Item:
         return "{} → {}".format(self.prod.nterm, " ".join(dot_syms))
 
 
-def get_closure(grammar: Grammar, item) -> set:
+class LR1Item(LR0Item):
+    def __init__(self, prod: Production=None, pos=0, lookahead=frozenset()):
+        LR0Item.__init__(self, prod, pos)
+        self.lookahead = lookahead
+
+    def __eq__(self, other):
+        return LR0Item.__eq__(self, other) and self.lookahead == other.lookahead
+
+    def __hash__(self):
+        return LR0Item.__hash__(self) ^ hash(self.lookahead)
+
+    def __repr__(self):
+        return "LR1Item({}, {} {})".format(self.prod, self.pos, self.lookahead)
+
+    def __str__(self):
+        return "[{}, {}]".format(LR0Item.__str__(self), '/'.join(self.lookahead))
+
+    def get_next_item(self):
+        return LR1Item(self.prod, self.pos + 1, self.lookahead)
+
+def get_closure(grammar: Grammar, item, item_builder) -> set:
     new_items = None
     if hasattr(item, '__iter__'):
         new_items = set(item)
@@ -54,7 +75,7 @@ def get_closure(grammar: Grammar, item) -> set:
             not grammar.is_nonterminal(next_syms[0]):
             continue
         for prod in grammar.prods[next_syms[0]]:
-            new_item = LR0Item(prod)
+            new_item = item_builder(prod, item)
             if new_item not in result:
                 new_items.add(new_item)
     return result
@@ -80,15 +101,15 @@ def categorize_items_by_next_symbol(closures: set) -> dict:
     return dict(result)
 
 
-def construct_kernels_closures_transitions(grammar: Grammar):
+def construct_kernels_closures_transitions(grammar: Grammar, item_builder):
     closures = list()      # closures[state] = set(item)
     transitions = list()   # transitions[src_state][sym] = dst_state
     kernels = list()       # kernels[state] = set(kernel_item)
-    kernels.append(frozenset({LR0Item(grammar.prods[grammar.start][0])}))
+    kernels.append(frozenset({item_builder(grammar.prods[grammar.start][0])}))
 
     kernel_idx = 0
     while kernel_idx < len(kernels):
-        src_items_closure = get_closure(grammar, kernels[kernel_idx])
+        src_items_closure = get_closure(grammar, kernels[kernel_idx], item_builder)
         closures.append(frozenset(src_items_closure))
 
         next_items = categorize_items_by_next_symbol(src_items_closure)
@@ -103,6 +124,28 @@ def construct_kernels_closures_transitions(grammar: Grammar):
         transitions.append(transition)
         kernel_idx += 1
     return kernels, closures, transitions
+
+
+def construct_kernels_closures_transitions_lr0(grammar: Grammar):
+    def item_builder(prod):
+        return LR0Item(prod)
+    return construct_kernels_closures_transitions(grammar, item_builder)
+
+
+def construct_kernels_closures_transitions_lr1(grammar: Grammar):
+    def item_builder(prod: Production, parent: LR1Item=None):
+        if not parent:
+            return LR1Item(prod, 0, frozenset({'$'}))
+
+        lookaheads = ll1.get_first_from_syms(first, parent.get_syms_after_dot()[1:])
+        if '@' in lookaheads:
+            lookaheads.discard('@')
+            lookaheads.update(parent.lookahead)
+        result = LR1Item(prod, 0, frozenset(lookaheads))
+        return result
+
+    first = ll1.construct_first(grammar)
+    return construct_kernels_closures_transitions(grammar, item_builder)
 
 
 def dump_dfa(kernels: list, closures: list, transitions: list, export_file):
@@ -152,11 +195,10 @@ def str_transitions(transitions: list) -> str:
     return result
 
 
-def str_lr0(grammar: Grammar):
+def str_lr(grammar: Grammar, construct_fn):
     argumented_grammar = construct_argumented_grammar(grammar)
-    kernels, closures, transitions = \
-        construct_kernels_closures_transitions(argumented_grammar)
-    result = 'LR(0):'
+    kernels, closures, transitions = construct_fn(argumented_grammar)
+    result = 'LR:'
     result += '\n' + str_kernels(kernels, closures)
     result += '\n' + str_transitions(transitions)
     return result
@@ -164,11 +206,12 @@ def str_lr0(grammar: Grammar):
 
 def main():
     bnf = '''
-    S := ( S R | a
-    R := , S R | )
+    S := C C
+    C := c C | d
     '''
     grammar = bnf_parser.parse(bnf)
-    print(str_lr0(grammar))
+    print(str_lr(grammar, construct_kernels_closures_transitions_lr1))
+
 
 if __name__ == '__main__':
     main()
