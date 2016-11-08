@@ -114,7 +114,7 @@ def construct_conflicts(table: dict) -> list:
 
 
 def _str_first_or_follow(grammar: Grammar, first: list, title) -> str:
-    result = '  ' + title
+    result = '  ' + title + ':'
     for sym in grammar.prods:
         result += '\n    {}: {}'.format(sym, ' '.join(first[sym]))
     return result
@@ -206,9 +206,9 @@ def str_parse(grammar: Grammar, table: dict, syms: list):
     get_length = lambda arr: max([len(t) for t in arr])
     inputs_length = get_length(inputs)
     stacks_length = get_length(stacks)
-    for i in range(len(inputs)):
+    for i, input_val in enumerate(inputs):
         print('{} | {} | {}'.format(
-            inputs[i].rjust(inputs_length), stacks[i].rjust(stacks_length),
+            input_val.rjust(inputs_length), stacks[i].rjust(stacks_length),
             actions[i]))
 
 
