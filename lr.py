@@ -58,7 +58,40 @@ class LR1Item(LR0Item):
     def get_next_item(self):
         return LR1Item(self.prod, self.pos + 1, self.lookahead)
 
-def get_closure(grammar: Grammar, item, item_builder) -> set:
+class LR0AlgorithmSuit:
+    NAME = 'LR0'
+
+    def build_item(self, prod: Production, parent: LR0Item=None):
+        self = self
+        parent = parent
+        return LR0Item(prod)
+
+    def construct_table(self, transitions: list) -> list:
+        # table[state] = dict(symbol -> action)
+        for src_state, transitions in enumerate(transitions):
+            for sym, dst_state in transitions.items():
+                pass
+
+
+class LR1AlgorithmSuit:
+    NAME = 'LR1'
+
+    def __init__(self, grammar: Grammar):
+        self.first = ll1.construct_first(grammar)
+
+    def build_item(self, prod: Production, parent: LR1Item=None):
+        if not parent:
+            return LR1Item(prod, 0, frozenset({'$'}))
+
+        lookaheads = ll1.get_first_from_syms(self.first, parent.get_syms_after_dot()[1:])
+        if '@' in lookaheads:
+            lookaheads.discard('@')
+            lookaheads.update(parent.lookahead)
+        result = LR1Item(prod, 0, frozenset(lookaheads))
+        return result
+
+
+def get_closure(grammar: Grammar, item, algo_suit) -> set:
     new_items = None
     if hasattr(item, '__iter__'):
         new_items = set(item)
@@ -75,7 +108,7 @@ def get_closure(grammar: Grammar, item, item_builder) -> set:
             not grammar.is_nonterminal(next_syms[0]):
             continue
         for prod in grammar.prods[next_syms[0]]:
-            new_item = item_builder(prod, item)
+            new_item = algo_suit.build_item(prod, item)
             if new_item not in result:
                 new_items.add(new_item)
     return result
@@ -101,15 +134,15 @@ def categorize_items_by_next_symbol(closures: set) -> dict:
     return dict(result)
 
 
-def construct_kernels_closures_transitions(grammar: Grammar, item_builder):
+def construct_kernels_closures_transitions(grammar: Grammar, algo_suit):
     closures = list()      # closures[state] = set(item)
     transitions = list()   # transitions[src_state][sym] = dst_state
     kernels = list()       # kernels[state] = set(kernel_item)
-    kernels.append(frozenset({item_builder(grammar.prods[grammar.start][0])}))
+    kernels.append(frozenset({algo_suit.build_item(grammar.prods[grammar.start][0])}))
 
     kernel_idx = 0
     while kernel_idx < len(kernels):
-        src_items_closure = get_closure(grammar, kernels[kernel_idx], item_builder)
+        src_items_closure = get_closure(grammar, kernels[kernel_idx], algo_suit)
         closures.append(frozenset(src_items_closure))
 
         next_items = categorize_items_by_next_symbol(src_items_closure)
@@ -124,28 +157,6 @@ def construct_kernels_closures_transitions(grammar: Grammar, item_builder):
         transitions.append(transition)
         kernel_idx += 1
     return kernels, closures, transitions
-
-
-def construct_kernels_closures_transitions_lr0(grammar: Grammar):
-    def item_builder(prod):
-        return LR0Item(prod)
-    return construct_kernels_closures_transitions(grammar, item_builder)
-
-
-def construct_kernels_closures_transitions_lr1(grammar: Grammar):
-    def item_builder(prod: Production, parent: LR1Item=None):
-        if not parent:
-            return LR1Item(prod, 0, frozenset({'$'}))
-
-        lookaheads = ll1.get_first_from_syms(first, parent.get_syms_after_dot()[1:])
-        if '@' in lookaheads:
-            lookaheads.discard('@')
-            lookaheads.update(parent.lookahead)
-        result = LR1Item(prod, 0, frozenset(lookaheads))
-        return result
-
-    first = ll1.construct_first(grammar)
-    return construct_kernels_closures_transitions(grammar, item_builder)
 
 
 def dump_dfa(kernels: list, closures: list, transitions: list, export_file):
@@ -195,13 +206,23 @@ def str_transitions(transitions: list) -> str:
     return result
 
 
-def str_lr(grammar: Grammar, construct_fn):
+def str_lr(grammar: Grammar, algo_suit_class):
     argumented_grammar = construct_argumented_grammar(grammar)
-    kernels, closures, transitions = construct_fn(argumented_grammar)
-    result = 'LR:'
+    algo_suit = algo_suit_class(argumented_grammar)
+    kernels, closures, transitions \
+        = construct_kernels_closures_transitions(argumented_grammar, algo_suit)
+    result = algo_suit.NAME + ':'
     result += '\n' + str_kernels(kernels, closures)
     result += '\n' + str_transitions(transitions)
     return result
+
+
+def dump_lr(grammar: Grammar, algo_suit_class, export_file):
+    argumented_grammar = construct_argumented_grammar(grammar)
+    algo_suit = algo_suit_class(argumented_grammar)
+    kernels, closures, transitions \
+        = construct_kernels_closures_transitions(argumented_grammar, algo_suit)
+    dump_dfa(kernels, closures, transitions, export_file)
 
 
 def main():
@@ -210,7 +231,7 @@ def main():
     C := c C | d
     '''
     grammar = bnf_parser.parse(bnf)
-    print(str_lr(grammar, construct_kernels_closures_transitions_lr1))
+    print(str_lr(grammar, LR1AlgorithmSuit))
 
 
 if __name__ == '__main__':
