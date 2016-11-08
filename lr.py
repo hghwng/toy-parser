@@ -302,6 +302,40 @@ def construct_table(grammar: Grammar, states: list, algo_suit):
     return table
 
 
+def parse(table: list, input_syms: list, callback):
+    states = [0]
+    syms = ['$']
+    pos = 0
+
+    while True:
+        if pos < len(input_syms):
+            sym = input_syms[pos]
+        else:
+            sym = '$'
+        state = states[-1]
+        action = tuple(table[state][sym])[0]
+        if action.action == LRAction.SHIFT:
+            callback(action, states, syms, pos)
+            states.append(action.info)
+            syms.append(sym)
+            pos += 1
+            if pos > len(input_syms):
+                pos = len(input_syms)
+        elif action.action == LRAction.REDUCE:
+            callback(action, states, syms, pos)
+            length = len(action.info.syms)
+            syms = syms[:-length] + list(action.info.nterm)
+            states = states[:-length]
+            goto_action = tuple(table[states[-1]][action.info.nterm])[0]
+            assert goto_action.action == LRAction.GOTO
+            states.append(goto_action.info)
+        elif action.action == LRAction.ACCEPT:
+            callback(action, states, syms, pos)
+            return
+        else:
+            assert False
+
+
 def dump_dfa(states: list, export_file):
     export_file.write('digraph {\n  rankdir = "LR";')
 
@@ -384,15 +418,46 @@ def dump_lr(grammar: Grammar, algo_suit_class, export_file):
     dump_dfa(states, export_file)
 
 
+def demo_parse(grammar: Grammar, algo_suit_class, input_syms: list):
+    grammar = construct_argumented_grammar(grammar)
+    algo_suit = algo_suit_class(grammar)
+    states = construct_states(grammar, algo_suit)
+    table = construct_table(grammar, states, algo_suit)
+    print(str_states(states))
+    print(str_table(table))
+
+    stack_str = list()
+    symbol_str = list()
+    input_str = list()
+    action_str = list()
+    def callback_dragonbook(action, states, syms, pos):
+        stack_str.append(' '.join([str(i) for i in states]))
+        symbol_str.append(' '.join(syms))
+        input_str.append(' '.join(input_syms[pos:]))
+        action_str.append(str(action))
+    parse(table, input_syms, callback_dragonbook)
+
+    get_length = lambda arr: max([len(t) for t in arr])
+    stack_length = get_length(stack_str)
+    symbol_length = get_length(symbol_str)
+    input_length = get_length(input_str)
+    for i, input_val in enumerate(input_str):
+        print('{} | {} | {} $ | {}'.format(
+            stack_str[i].ljust(stack_length),
+            symbol_str[i].ljust(symbol_length),
+            input_val.rjust(input_length),
+            action_str[i]))
+
+
 def main():
     bnf = '''
-    S := L = R | R
-    L := * R | id
-    R := L
+    E := E + T | T
+    T := T * F | F
+    F := ( E ) | id
     '''
     grammar = bnf_parser.parse(bnf)
-    print(str_lr(grammar, LR0AlgorithmSuit))
-    dump_lr(grammar, SLR1AlgorithmSuit, open('dump.dot', 'w'))
+    # print(str_lr(grammar, SLR1AlgorithmSuit))
+    demo_parse(grammar, LR1AlgorithmSuit, 'id * id + id'.split())
 
 
 if __name__ == '__main__':
