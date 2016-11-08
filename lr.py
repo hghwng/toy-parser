@@ -92,20 +92,90 @@ class LRState:
             return -1
 
 
+class LRAction:
+    SHIFT = 1,
+    REDUCE = 2,
+    GOTO = 3,
+    ACCEPT = 4,
+
+    def __init__(self, action: int, info=None):
+        self.action = action
+        self.info = info
+
+    def __repr__(self):
+        if self.action == self.SHIFT:
+            return "LRAction(SHIFT, {})".format(self.info)
+        if self.action == self.REDUCE:
+            return "LRAction(REDUCE, {})".format(self.info)
+        if self.action == self.GOTO:
+            return "LRAction(GOTO, {})".format(self.info)
+        if self.action == self.ACCEPT:
+            return "LRAction(ACCEPT)"
+        assert False
+
+    def __str__(self):
+        if self.action == self.SHIFT:
+            return "Shift {}".format(self.info)
+        if self.action == self.REDUCE:
+            return "Reduce {}".format(self.info)
+        if self.action == self.GOTO:
+            return "Goto {}".format(self.info)
+        if self.action == self.ACCEPT:
+            return "Accept"
+        assert False
+
+    @staticmethod
+    def new_shift(state: int):
+        return LRAction(LRAction.SHIFT, state)
+
+    @staticmethod
+    def new_reduce(prod: Production):
+        return LRAction(LRAction.REDUCE, prod)
+
+    @staticmethod
+    def new_goto(state: int):
+        return LRAction(LRAction.GOTO, state)
+
+    @staticmethod
+    def new_accept():
+        return LRAction(LRAction.ACCEPT)
+
+
 class LR0AlgorithmSuit:
-    NAME = 'LR0'
+    NAME = 'LR(0)'
 
     def __init__(self, grammar: Grammar):
-        pass
+        self.grammar = grammar
 
     def build_item(self, prod: Production, parent: LR0Item=None):
         self = self
         parent = parent
         return LR0Item(prod)
 
+    def build_reduce(self, actions: defaultdict, edge: LREdge):
+        # Just simply reduce!
+        for item in edge.src_items:
+            for term in self.grammar.terms:
+                actions[term].add(LRAction.new_reduce(item.prod))
+
+
+class SLR1AlgorithmSuit(LR0AlgorithmSuit):
+    NAME = 'SLR(1)'
+
+    def __init__(self, grammar: Grammar):
+        LR0AlgorithmSuit.__init__(self, grammar)
+        first = ll1.construct_first(grammar)
+        self.follow = ll1.construct_follow(grammar, first)
+
+    def build_reduce(self, actions: defaultdict, edge: LREdge):
+        # Reduce by consulting the FOLLOW set
+        for item in edge.src_items:
+            for term in self.follow[item.prod.nterm]:
+                actions[term].add(LRAction.new_reduce(item.prod))
+
 
 class LR1AlgorithmSuit:
-    NAME = 'LR1'
+    NAME = 'LR(1)'
 
     def __init__(self, grammar: Grammar):
         self.first = ll1.construct_first(grammar)
@@ -120,6 +190,12 @@ class LR1AlgorithmSuit:
             lookaheads.update(parent.lookahead)
         result = LR1Item(prod, 0, frozenset(lookaheads))
         return result
+
+    def build_reduce(self, actions: defaultdict, edge: LREdge):
+        self = self
+        for item in edge.src_items:
+            for lookahead in item.lookahead:
+                actions[lookahead].add(LRAction.new_reduce(item.prod))
 
 
 def get_closure(grammar: Grammar, item, algo_suit) -> set:
@@ -183,12 +259,9 @@ def _construct_edge(states: list, src_dict: dict, dst_dict: dict):
     return edges
 
 
-def construct_states(grammar: Grammar, algo_suit_class):
-    grammar = construct_argumented_grammar(grammar)
-    algo_suit = algo_suit_class(grammar)
+def construct_states(grammar: Grammar, algo_suit):
     states = list()
-
-    initial_kernel = algo_suit.build_item(grammar.prods[grammar.start][0])
+    initial_kernel = algo_suit.build_item(grammar.get_start_prodctions()[0])
     states.append(LRState(frozenset({initial_kernel})))
 
     state_idx = 0
@@ -199,6 +272,31 @@ def construct_states(grammar: Grammar, algo_suit_class):
         src_state.edges = _construct_edge(states, src_dict, dst_dict)
         state_idx += 1
     return states
+
+
+def construct_table(grammar: Grammar, states: list, algo_suit):
+    final_item = LR0Item(grammar.get_start_prodctions()[0], 1)
+    table = list()  # table[src_state][sym] = set(LRAction)
+    for state in states:
+        actions = defaultdict(set)
+        table.append(actions)
+        for sym, edge in state.edges.items():
+            if sym == '':
+                continue
+            if grammar.is_terminal(sym):
+                # Terminal, shift
+                actions[sym].add(LRAction.new_shift(edge.dst_state))
+            else:
+                if final_item == tuple(edge.src_items)[0]:
+                    # Nonterminal, accept
+                    actions[sym].add(LRAction.new_accept())
+                else:
+                    # Nonterminal, goto
+                    actions[sym].add(LRAction.new_goto(edge.dst_state))
+        if '' in state.edges:
+            # Reduce
+            algo_suit.build_reduce(actions, state.edges[''])
+    return table
 
 
 def dump_dfa(states: list, export_file):
@@ -252,27 +350,46 @@ def str_transitions(states: list) -> str:
     return result
 
 
+def str_table(table: list):
+    result = '  Table:'
+    for src_state, row in enumerate(table):
+        for sym, actions in row.items():
+            header = '{} - {}'.format(src_state, sym)
+            for action in actions:
+                result += '\n    ' + header + ': ' + str(action)
+                header = '!' * len(header)
+    return result
+
+
 def str_lr(grammar: Grammar, algo_suit_class):
-    states = construct_states(grammar, algo_suit_class)
+    grammar = construct_argumented_grammar(grammar)
+    algo_suit = algo_suit_class(grammar)
+    states = construct_states(grammar, algo_suit)
+    table = construct_table(grammar, states, algo_suit)
+
     result = algo_suit_class.NAME + ':'
     result += '\n' + str_states(states)
     result += '\n' + str_transitions(states)
+    result += '\n' + str_table(table)
     return result
 
 
 def dump_lr(grammar: Grammar, algo_suit_class, export_file):
-    states = construct_states(grammar, algo_suit_class)
+    algo_suit = algo_suit_class(grammar)
+    grammar = construct_argumented_grammar(grammar)
+    states = construct_states(grammar, algo_suit)
     dump_dfa(states, export_file)
 
 
 def main():
     bnf = '''
-    S := C C
-    C := c C | d
+    S := L = R | R
+    L := * R | id
+    R := L
     '''
     grammar = bnf_parser.parse(bnf)
-    print(str_lr(grammar, LR1AlgorithmSuit))
-    dump_lr(grammar, LR1AlgorithmSuit, open('dump.dot', 'w'))
+    print(str_lr(grammar, LR0AlgorithmSuit))
+    dump_lr(grammar, SLR1AlgorithmSuit, open('dump.dot', 'w'))
 
 
 if __name__ == '__main__':

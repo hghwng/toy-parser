@@ -25,6 +25,9 @@ class Grammar:
             nonterm += "'"
         return nonterm
 
+    def get_start_prodctions(self):
+        return self.prods[self.start]
+
     def duplicate(self):
         from copy import deepcopy
         return deepcopy(self)
