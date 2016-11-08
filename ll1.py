@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import bnf_parser
 from grammar import Grammar, Production
 
 
@@ -162,22 +163,79 @@ def str_ll1(grammar: Grammar) -> str:
     return result
 
 
+def parse(grammar: Grammar, table: dict, syms: list, callback):
+    stack = [grammar.start]
+    pos = 0
+    callback('INIT', stack, pos, None)
+    while stack:
+        sym = '$'
+        if pos < len(syms):
+            sym = syms[pos]
+        top = stack.pop()
+        if grammar.is_terminal(top):
+            assert sym == top
+            pos += 1
+            if pos > len(syms):
+                pos = len(syms)
+            callback('MATCH', stack, pos, sym)
+        else:
+            prod = list(filter(lambda x: x[0] == sym, table[top]))[0]
+            prod = prod[1]
+            stack_syms = prod.syms[-1::-1]
+            if tuple(stack_syms) != ('@',):
+                stack.extend(stack_syms)
+            callback('OUTPUT', stack, pos, prod)
+
+
+def str_parse(grammar: Grammar, table: dict, syms: list):
+    def callback(action, stack, pos, info):
+        str_action = ''
+        if action == 'MATCH':
+            str_action = 'match  ' + info
+        elif action == 'OUTPUT':
+            str_action = 'output '  + str(info)
+        inputs.append(' '.join(syms[pos:]) + ' $')
+        stacks.append(' '.join(stack[-1::-1]) + ' $')
+        actions.append(str_action)
+
+    inputs = list()
+    stacks = list()
+    actions = list()
+    parse(grammar, table, syms, callback)
+
+    get_length = lambda arr: max([len(t) for t in arr])
+    inputs_length = get_length(inputs)
+    stacks_length = get_length(stacks)
+    for i in range(len(inputs)):
+        print('{} | {} | {}'.format(
+            inputs[i].rjust(inputs_length), stacks[i].rjust(stacks_length),
+            actions[i]))
+
+
 def _demo_construction(bnf):
-    from bnf_parser import parse
-    grammar = parse(bnf)
+    grammar = bnf_parser.parse(bnf)
     print(grammar)
     print(str_ll1(grammar))
+
+
+def _demo_parse(grammar: Grammar, syms: str):
+    first = construct_first(grammar)
+    follow = construct_follow(grammar, first)
+    table = construct_table(grammar, first, follow)
+    conflicts = construct_conflicts(table)
+    assert not conflicts
+    str_parse(grammar, table, syms)
 
 
 def main():
     bnf = '''
     E  := T E'
-    E' := '+' T E' | @
+    E' := + T E' | @
     T  := F T'
-    T' := '*' F T' | @
-    F  := '(' E ')' | id
+    T' := * F T' | @
+    F  := ( E ) | id
     '''
-    _demo_construction(bnf)
+    _demo_parse(bnf_parser.parse(bnf), 'id + id * id'.split())
 
     bnf = '''
     S  := 'i' E 't' S S' | a
