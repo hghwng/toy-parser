@@ -111,16 +111,15 @@ class _BNFParser:
             for token, regexp in regexps:
                 m = regexp.match(buf, i)
                 if m:
-                    break
-            if m:
-                if token == self.Token.SYM:
-                    if m.group() == r"'\''":
-                        result.append((self.Token.SYM, "'"))
+                    if token == self.Token.SYM:
+                        if m.group() == r"'\''":
+                            result.append((self.Token.SYM, "'"))
+                        else:
+                            result.append((token, m.group()))
                     else:
                         result.append((token, m.group()))
-                else:
-                    result.append((token, m.group()))
-                i = m.end()
+                    i = m.end()
+                    break
             else:
                 raise SyntaxError("Unknown token at pos {} ({})".format(
                     i, buf[i:i + 10]))

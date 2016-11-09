@@ -61,6 +61,7 @@ class Production:
             result ^= hash(sym)
         return result
 
+    @staticmethod
     def remove_eps(syms: list) -> list:
         for sym in syms:
             if sym != '@':
