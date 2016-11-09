@@ -418,7 +418,7 @@ def dump_lr(grammar: Grammar, algo_suit_class, export_file):
     dump_dfa(states, export_file)
 
 
-def _demo_parse_cptt(table: list, input_syms: list):
+def _str_parse_cptt(table: list, input_syms: list):
     stack_str = list()
     symbol_str = list()
     input_str = list()
@@ -434,14 +434,18 @@ def _demo_parse_cptt(table: list, input_syms: list):
     stack_length = get_length(stack_str)
     symbol_length = get_length(symbol_str)
     input_length = get_length(input_str)
+
+    result = ''
     for i, input_val in enumerate(input_str):
-        print('{} | {} | {} $ | {}'.format(
+        result += '  {} | {} | {} $ | {}\n'.format(
             stack_str[i].ljust(stack_length),
             symbol_str[i].ljust(symbol_length),
             input_val.rjust(input_length),
-            action_str[i]))
+            action_str[i])
+    return result
 
-def _demo_parse_old(table: list, input_syms: list):
+
+def _str_parse_old(table: list, input_syms: list):
     overview_str = list()
     input_str = list()
     action_str = list()
@@ -457,25 +461,32 @@ def _demo_parse_old(table: list, input_syms: list):
     get_length = lambda arr: max([len(t) for t in arr])
     overview_length = get_length(overview_str)
     input_length = get_length(input_str)
+
+    result = ''
     for i, input_val in enumerate(input_str):
-        print('{} | {} | {}'.format(
+        result += '  {} | {} | {}\n'.format(
             overview_str[i].ljust(overview_length),
             input_val.rjust(input_length),
-            action_str[i]))
+            action_str[i])
+    return result
+
+
+def str_parse(table: list, input_syms: list, use_old_style=True):
+    if use_old_style:
+        return _str_parse_old(table, input_syms)
+    else:
+        return _str_parse_cptt(table, input_syms)
 
 
 def demo_parse(grammar: Grammar, algo_suit_class, input_syms: list,
-               old_style=True):
+               use_old_style=True):
     grammar = construct_argumented_grammar(grammar)
     algo_suit = algo_suit_class(grammar)
     states = construct_states(grammar, algo_suit)
     table = construct_table(grammar, states, algo_suit)
     print(str_states(states))
     print(str_table(table))
-    if old_style:
-        _demo_parse_old(table, input_syms)
-    else:
-        _demo_parse_cptt(table, input_syms)
+    print(str_parse(table, input_syms, use_old_style))
 
 
 def main():

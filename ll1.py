@@ -206,10 +206,13 @@ def str_parse(grammar: Grammar, table: dict, syms: list):
     get_length = lambda arr: max([len(t) for t in arr])
     inputs_length = get_length(inputs)
     stacks_length = get_length(stacks)
+
+    result = ''
     for i, input_val in enumerate(inputs):
-        print('{} | {} | {}'.format(
+        result += '  {} | {} | {}\n'.format(
             input_val.rjust(inputs_length), stacks[i].rjust(stacks_length),
-            actions[i]))
+            actions[i])
+    return result
 
 
 def _demo_construction(bnf):
@@ -224,7 +227,7 @@ def _demo_parse(grammar: Grammar, syms: str):
     table = construct_table(grammar, first, follow)
     conflicts = construct_conflicts(table)
     assert not conflicts
-    str_parse(grammar, table, syms)
+    demo_parse(grammar, table, syms)
 
 
 def main():
